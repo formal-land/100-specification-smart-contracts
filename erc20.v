@@ -5,21 +5,6 @@ Import ListNotations.
 
 Local Open Scope type.
 
-(** Existential in [Set] *)
-Inductive sigS {A : Type} (P : A -> Set) : Set :=
-| existS : forall (x : A), P x -> sigS P.
-Arguments existS {_ _}.
-
-(* Notations *)
-Reserved Notation "{ x @ P }" (at level 0, x at level 99).
-Reserved Notation "{ x : A @ P }" (at level 0, x at level 99).
-Reserved Notation "{ ' pat : A @ P }"
-  (at level 0, pat strict pattern, format "{ ' pat : A @ P }").
-
-Notation "{ x @ P }" := (sigS (fun x => P)) : type_scope.
-Notation "{ x : A @ P }" := (sigS (A := A) (fun x => P)) : type_scope.
-Notation "{ ' pat : A @ P }" := (sigS (A := A) (fun pat => P)) : type_scope.
-
 Parameter World : Set.
 Parameter User : Set.
 Parameter TokenKind : Set.
@@ -191,9 +176,8 @@ Module NoStealing.
 
   Module InRun.
     Definition t {A : Set} (world : World) (sender : User) (e : M.t A) : Prop :=
-      forall (result : A) (world' : World) (tree : ActionTree.t),
-        M.run e world = (result, world', tree) ->
-        InActionTree.t sender tree.
+      let '(_, _, tree) := M.run e world in
+      InActionTree.t sender tree.
   End InRun.
 
   Module InSmartContract.
@@ -208,3 +192,51 @@ Module NoStealing.
     }.
   End InSmartContract.
 End NoStealing.
+
+Module Erc20IsSafe.
+  Lemma is_safe : NoStealing.InSmartContract.t Erc20.smart_contract.
+  Proof.
+    constructor; intros; cbn.
+    { (* init *)
+      destruct init_input as [name symbol].
+      unfold NoStealing.InRun.t; cbn.
+      destruct Primitives.create_token_kind.
+      apply ActionTree.Forall.Let. {
+        apply ActionTree.Forall.MakeAction.
+        cbn.
+        trivial.
+      }
+      apply ActionTree.Forall.Pure.
+    }
+    { (* call *)
+      destruct command.
+      { (* BalanceOf *)
+        unfold NoStealing.InRun.t; cbn.
+        apply ActionTree.Forall.Let. {
+          apply ActionTree.Forall.MakeAction.
+          cbn.
+          trivial.
+        }
+        apply ActionTree.Forall.Pure.
+      }
+      { (* Transfer *)
+        unfold NoStealing.InRun.t; cbn.
+        destruct Primitives.transfer; cbn.
+        { apply ActionTree.Forall.Let. {
+            apply ActionTree.Forall.MakeAction.
+            cbn.
+            reflexivity.
+          }
+          apply ActionTree.Forall.Pure.
+        }
+        { apply ActionTree.Forall.Let. {
+            apply ActionTree.Forall.MakeAction.
+            cbn.
+            reflexivity.
+          }
+          apply ActionTree.Forall.Pure.
+        }
+      }
+    }
+  Qed.
+End Erc20IsSafe.
