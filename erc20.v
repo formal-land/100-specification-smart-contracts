@@ -45,6 +45,13 @@ Module Primitives.
     TokenQuantity token_kind ->
     World ->
     option World.
+
+  (* Get the total supply of a token kind *)
+  Parameter get_total_supply :
+    forall (token_kind : TokenKind),
+    list User ->
+    World ->
+    TokenQuantity token_kind.
 End Primitives.
 
 (** Actions are the primitives that we can run in our DSL to interact with tokens, make transfers,
@@ -61,9 +68,12 @@ Module Action.
   | GetBalance (token_kind : TokenKind) (user : User) : t (TokenQuantity token_kind)
   (** Ask to transfer token from a user to another one. The result is a boolean stating if the
       transfer was successful, meaning if there were enough funds. *)
-  | Transfer (token_kind : TokenKind) (from to : User) (value : TokenQuantity token_kind) : t bool.
+  | Transfer (token_kind : TokenKind) (from to : User) (value : TokenQuantity token_kind) : t bool
 
-  (** This function maps the actions we defined to the primitives acting on the world above *)
+  (* Apologies for the massive comments, but I am very lost *)
+  (* This is a function that takes a token kind and a list of users and returns the total supply of
+     the token kind. *)
+  | GetTotalSupply (token_kind : TokenKind) (users : list User) : t (TokenQuantity token_kind). 
   Definition run (world : World) {A : Set} (action : t A) : A * World :=
     match action with
     | CreateTokenKind =>
@@ -75,6 +85,8 @@ Module Action.
       | Some world' => (true, world')
       | None => (false, world)
       end
+    | GetTotalSupply token_kind users =>
+      (Primitives.get_total_supply token_kind users world, world)
     end.
 End Action.
 
@@ -205,7 +217,8 @@ Module Erc20.
   Module Command.
     Inductive t {token_kind : InitOutput} : Set -> Set :=
     | BalanceOf : User -> t (TokenQuantity token_kind)
-    | Transfer : User -> TokenQuantity token_kind -> t unit.
+    | Transfer : User -> TokenQuantity token_kind -> t unit
+    | TotalSupply : list User -> t (TokenQuantity token_kind).
     Arguments t : clear implicits.
   End Command.
 
@@ -240,6 +253,10 @@ Module Erc20.
           M.Pure (Some (tt, state))
         else
           M.Pure None
+      (* New command - get the total supply of the token *)
+      | Command.TotalSupply users => 
+        let! total_supply := M.MakeAction (Action.GetTotalSupply token_kind users) in
+        M.Pure (Some (total_supply, state))
       end;
   |}.
 End Erc20.
@@ -261,6 +278,9 @@ Module NoStealing.
           as the user running the smart contract *)
       | Action.Transfer token_kind from to value =>
         from = sender
+      | Action.GetTotalSupply _ _ => True
+      (* Get total supply is safe because it is a read-only operation *)
+
       end.
   End InAction.
 
@@ -352,6 +372,17 @@ Module Erc20IsSafe.
           }
           apply ActionTree.Forall.Pure.
         }
+      }
+      { (* TotalSupply *)
+        unfold NoStealing.InRun.t; cbn. (* This is the same as the balanceOf case *)
+        apply ActionTree.Forall.Let. { 
+          (* The "totalSupply" entrypoint is safe because the action we make to get the total supply
+             of a token is safe *)
+          apply ActionTree.Forall.MakeAction.
+          cbn.
+          trivial.
+        }
+        apply ActionTree.Forall.Pure.
       }
     }
   Qed.
