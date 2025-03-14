@@ -36,10 +36,11 @@ Module Primitives.
     World ->
     TokenQuantity token_kind.
 
+  (** Get the number of token that a [spender] is allowed to spend from a [user] *)
   Parameter get_allowance :
     forall (token_kind : TokenKind),
-    User -> (* user *)
-    User -> (* spender *)
+    forall (user : User),
+    forall (spender : User),
     World ->
     TokenQuantity token_kind.
 
@@ -53,10 +54,11 @@ Module Primitives.
     World ->
     option World.
 
+  (** Set the allowance for a certain [spender] at a certain amount from the account of a [user] *)
   Parameter approve :
     forall (token_kind : TokenKind),
-    User -> (* user *)
-    User -> (* spender *)
+    forall (user : User),
+    forall (spender : User),
     TokenQuantity token_kind ->
     World ->
     World.
@@ -274,7 +276,7 @@ Module Erc20.
         (* We run the action to get the balance *)
         let! balance := M.MakeAction (Action.GetBalance token_kind user) in
         M.Pure (Some (balance, state))
-      (* "getAllowance" *)
+      (* The "allowance" entrypoint *)
       | Command.GetAllowance user spender =>
         let! allowance := M.MakeAction (Action.GetAllowance token_kind user spender) in
         M.Pure (Some (allowance, state))
@@ -286,6 +288,7 @@ Module Erc20.
           M.Pure (Some (tt, state))
         else
           M.Pure None
+      (* The "approve" entrypoint *)
       | Command.Approve spender value =>
         let! _ := M.MakeAction (Action.Approve token_kind sender spender value) in
         M.Pure (Some (tt, state))
