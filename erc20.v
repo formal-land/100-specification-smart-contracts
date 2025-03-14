@@ -36,11 +36,33 @@ Module Primitives.
     World ->
     TokenQuantity token_kind.
 
+  Parameter get_allowance :
+    forall (token_kind : TokenKind),
+    User -> (* user *)
+    User -> (* spender *)
+    World ->
+    TokenQuantity token_kind.
+
   (** Transfer a certain quantity of tokens from a user to another, and return the new state of the
       world where the quantity of tokens they both own has been updated. *)
   Parameter transfer :
     forall (token_kind : TokenKind),
     User ->
+    User ->
+    TokenQuantity token_kind ->
+    World ->
+    option World.
+
+  Parameter approve :
+    forall (token_kind : TokenKind),
+    User -> (* user *)
+    User -> (* spender *)
+    TokenQuantity token_kind ->
+    World ->
+    World.
+
+  Parameter mint :
+    forall (token_kind : TokenKind),
     User ->
     TokenQuantity token_kind ->
     World ->
@@ -59,9 +81,17 @@ Module Action.
   | CreateTokenKind : t TokenKind
   (** Ask for the number of tokens owned by a user *)
   | GetBalance (token_kind : TokenKind) (user : User) : t (TokenQuantity token_kind)
+  | GetAllowance (token_kind : TokenKind) (user spender : User) : t (TokenQuantity token_kind)
   (** Ask to transfer token from a user to another one. The result is a boolean stating if the
       transfer was successful, meaning if there were enough funds. *)
-  | Transfer (token_kind : TokenKind) (from to : User) (value : TokenQuantity token_kind) : t bool.
+  | Transfer (token_kind : TokenKind) (from to : User) (value : TokenQuantity token_kind) : t bool
+  | Approve (token_kind : TokenKind) (user spender : User) (value : TokenQuantity token_kind) : t unit
+  | Mint
+    (token_kind : TokenKind)
+    (account : User)
+    (value : TokenQuantity token_kind) :
+    t bool
+  .
 
   (** This function maps the actions we defined to the primitives acting on the world above *)
   Definition run (world : World) {A : Set} (action : t A) : A * World :=
@@ -70,8 +100,17 @@ Module Action.
       Primitives.create_token_kind world
     | GetBalance token_kind user =>
       (Primitives.get_balance token_kind user world, world)
+    | GetAllowance token_kind user spender =>
+      (Primitives.get_allowance token_kind user spender world, world)
     | Transfer token_kind from to value =>
       match Primitives.transfer token_kind from to value world with
+      | Some world' => (true, world')
+      | None => (false, world)
+      end
+    | Approve token_kind user spender value =>
+      (tt, Primitives.approve token_kind user spender value world)
+    | Mint token_kind account value =>
+      match Primitives.mint token_kind account value world with
       | Some world' => (true, world')
       | None => (false, world)
       end
@@ -205,7 +244,10 @@ Module Erc20.
   Module Command.
     Inductive t {token_kind : InitOutput} : Set -> Set :=
     | BalanceOf : User -> t (TokenQuantity token_kind)
-    | Transfer : User -> TokenQuantity token_kind -> t unit.
+    | GetAllowance : User -> User -> t (TokenQuantity token_kind)
+    | Transfer : User -> TokenQuantity token_kind -> t unit
+    | Approve (spender : User) (quantity : TokenQuantity token_kind) : t unit
+    | Mint (account : User) (value : TokenQuantity token_kind) : t unit.
     Arguments t : clear implicits.
   End Command.
 
@@ -232,10 +274,23 @@ Module Erc20.
         (* We run the action to get the balance *)
         let! balance := M.MakeAction (Action.GetBalance token_kind user) in
         M.Pure (Some (balance, state))
+      (* "getAllowance" *)
+      | Command.GetAllowance user spender =>
+        let! allowance := M.MakeAction (Action.GetAllowance token_kind user spender) in
+        M.Pure (Some (allowance, state))
       (* The "transfer" entrypoint *)
       | Command.Transfer to value =>
         (* We run the action to make the transfer and to know if it succeeded *)
         let! is_success := M.MakeAction (Action.Transfer token_kind sender to value) in
+        if is_success then
+          M.Pure (Some (tt, state))
+        else
+          M.Pure None
+      | Command.Approve spender value =>
+        let! _ := M.MakeAction (Action.Approve token_kind sender spender value) in
+        M.Pure (Some (tt, state))
+      | Command.Mint account value =>
+        let! is_success := M.MakeAction (Action.Mint token_kind account value) in
         if is_success then
           M.Pure (Some (tt, state))
         else
@@ -257,10 +312,14 @@ Module NoStealing.
       | Action.CreateTokenKind => True
       (** Asking for the balance of a user is safe (all data are public in a blockchain) *)
       | Action.GetBalance _ _ => True
+      | Action.GetAllowance _ _ _ => True
       (** Transferring tokens is only safe is the account from which we take the money is the same
           as the user running the smart contract *)
       | Action.Transfer token_kind from to value =>
         from = sender
+      | Action.Approve _ user _ _ =>
+        user = sender
+      | Action.Mint token_kind account value => True
       end.
   End InAction.
 
@@ -331,6 +390,16 @@ Module Erc20IsSafe.
         }
         apply ActionTree.Forall.Pure.
       }
+      { (* GetAllowance *)
+        cbn.
+        unfold NoStealing.InActionTree.t.
+        apply ActionTree.Forall.Let. {
+          apply ActionTree.Forall.MakeAction.
+          cbn.
+          trivial.
+        }
+        apply ActionTree.Forall.Pure.
+      }
       { (* Transfer *)
         unfold NoStealing.InRun.t; cbn.
         (* We have two cases, depending on whether the transfer succeeded or not. In both cases we
@@ -349,6 +418,35 @@ Module Erc20IsSafe.
             apply ActionTree.Forall.MakeAction.
             cbn.
             reflexivity.
+          }
+          apply ActionTree.Forall.Pure.
+        }
+      }
+      { (* Approve *)
+        cbn.
+        apply ActionTree.Forall.Let. {
+          apply ActionTree.Forall.MakeAction.
+          cbn.
+          trivial.
+        }
+        apply ActionTree.Forall.Pure.
+      }
+      { (* Mint *)
+        unfold NoStealing.InRun.t; cbn.
+        destruct Primitives.mint.
+        { cbn.
+          apply ActionTree.Forall.Let. {
+            apply ActionTree.Forall.MakeAction.
+            cbn.
+            trivial.
+          }
+          apply ActionTree.Forall.Pure.
+        }
+        { cbn.
+          apply ActionTree.Forall.Let. {
+            apply ActionTree.Forall.MakeAction.
+            cbn.
+            trivial.
           }
           apply ActionTree.Forall.Pure.
         }
