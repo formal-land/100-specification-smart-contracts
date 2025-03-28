@@ -21,6 +21,9 @@ Parameter TokenKind : Set.
     will be positive integer or a positive real number, if we allow to own a part of a token. *)
 Parameter TokenQuantity : forall (token_kind : TokenKind), Set.
 
+(** A quantity of one token for a given [token_kind]. *)
+Parameter TokenQuantityOne : forall {token_kind : TokenKind}, TokenQuantity token_kind.
+
 (** The primitives that we assume as given on the types provided above. *)
 Module Primitives.
   (** Create a new kind of token, different from all the kinds that existed before, and return the
@@ -69,6 +72,22 @@ Module Primitives.
     TokenQuantity token_kind ->
     World ->
     option World.
+
+  (** Get the unique owner of a certain token kind. This owner must some bits of the token kind,
+      and there must be no other owner for this token kind. *)
+  Parameter get_unique_token_kind_owner :
+    forall (token_kind : TokenKind),
+    World ->
+    option User.
+
+  Parameter user_eq :
+    forall (user1 user2 : User),
+    bool.
+
+  Axiom user_eq_is_valid :
+    forall (user1 user2 : User),
+    user_eq user1 user2 = true ->
+    user1 = user2.
 End Primitives.
 
 (** Actions are the primitives that we can run in our DSL to interact with tokens, make transfers,
@@ -93,6 +112,8 @@ Module Action.
     (account : User)
     (value : TokenQuantity token_kind) :
     t bool
+  | GetUniqueTokenKindOwner (token_kind : TokenKind) : t (option User)
+  | UserEq (user1 user2 : User) : t bool
   .
 
   (** This function maps the actions we defined to the primitives acting on the world above *)
@@ -116,6 +137,10 @@ Module Action.
       | Some world' => (true, world')
       | None => (false, world)
       end
+    | GetUniqueTokenKindOwner token_kind =>
+      (Primitives.get_unique_token_kind_owner token_kind world, world)
+    | UserEq user1 user2 =>
+      (Primitives.user_eq user1 user2, world)
     end.
 End Action.
 
@@ -241,6 +266,8 @@ Module NoStealing.
       | Action.Approve _ user _ _ =>
         user = sender
       | Action.Mint token_kind account value => True
+      | Action.GetUniqueTokenKindOwner _ => True
+      | Action.UserEq _ _ => True
       end.
   End InAction.
 
