@@ -153,13 +153,22 @@ Module IsSafe.
         }
       }
       { (* Approve *)
-        cbn.
-        apply ActionTree.Forall.Let. {
-          apply ActionTree.Forall.MakeAction.
-          cbn.
-          trivial.
+        unfold NoStealing.InRun.t; cbn.
+        destruct Primitives.approve; cbn.
+        { apply ActionTree.Forall.Let. {
+            apply ActionTree.Forall.MakeAction.
+            cbn.
+            trivial.
+          }
+          apply ActionTree.Forall.Pure.
         }
-        apply ActionTree.Forall.Pure.
+        { apply ActionTree.Forall.Let. {
+            apply ActionTree.Forall.MakeAction.
+            cbn.
+            trivial.
+          }
+          apply ActionTree.Forall.Pure.
+        }
       }
       { (* Mint *)
         unfold NoStealing.InRun.t; cbn.

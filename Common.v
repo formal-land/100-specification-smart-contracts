@@ -64,7 +64,7 @@ Module Primitives.
     forall (spender : User),
     TokenQuantity token_kind ->
     World ->
-    World.
+    option World.
 
   Parameter mint :
     forall (token_kind : TokenKind),
@@ -88,6 +88,18 @@ Module Primitives.
     forall (user1 user2 : User),
     user_eq user1 user2 = true ->
     user1 = user2.
+
+  Parameter find_user_with_enough_balance :
+    forall (token_kind : TokenKind),
+    forall (amount : TokenQuantity token_kind),
+    World ->
+    option User.
+
+  Parameter selling_price_for_nft :
+    forall (payment_token_kind nft_type : TokenKind),
+    User ->
+    World ->
+    option (TokenQuantity payment_token_kind).
 End Primitives.
 
 (** Actions are the primitives that we can run in our DSL to interact with tokens, make transfers,
@@ -106,7 +118,11 @@ Module Action.
   (** Ask to transfer token from a user to another one. The result is a boolean stating if the
       transfer was successful, meaning if there were enough funds. *)
   | Transfer (token_kind : TokenKind) (from to : User) (value : TokenQuantity token_kind) : t bool
-  | Approve (token_kind : TokenKind) (user spender : User) (value : TokenQuantity token_kind) : t unit
+  | Approve
+    (token_kind : TokenKind)
+    (user spender : User)
+    (value : TokenQuantity token_kind) :
+    t bool
   | Mint
     (token_kind : TokenKind)
     (account : User)
@@ -114,6 +130,14 @@ Module Action.
     t bool
   | GetUniqueTokenKindOwner (token_kind : TokenKind) : t (option User)
   | UserEq (user1 user2 : User) : t bool
+  | FindUserWithEnoughBalance
+    (token_kind : TokenKind)
+    (amount : TokenQuantity token_kind) :
+    t (option User)
+  | SellingPriceForNft
+    (payment_token_kind nft_type : TokenKind)
+    (user : User) :
+    t (option (TokenQuantity payment_token_kind))
   .
 
   (** This function maps the actions we defined to the primitives acting on the world above *)
@@ -131,7 +155,10 @@ Module Action.
       | None => (false, world)
       end
     | Approve token_kind user spender value =>
-      (tt, Primitives.approve token_kind user spender value world)
+      match Primitives.approve token_kind user spender value world with
+      | Some world' => (true, world')
+      | None => (false, world)
+      end
     | Mint token_kind account value =>
       match Primitives.mint token_kind account value world with
       | Some world' => (true, world')
@@ -141,6 +168,10 @@ Module Action.
       (Primitives.get_unique_token_kind_owner token_kind world, world)
     | UserEq user1 user2 =>
       (Primitives.user_eq user1 user2, world)
+    | FindUserWithEnoughBalance token_kind amount =>
+      (Primitives.find_user_with_enough_balance token_kind amount world, world)
+    | SellingPriceForNft payment_token_kind nft_type user =>
+      (Primitives.selling_price_for_nft payment_token_kind nft_type user world, world)
     end.
 End Action.
 
@@ -268,6 +299,8 @@ Module NoStealing.
       | Action.Mint token_kind account value => True
       | Action.GetUniqueTokenKindOwner _ => True
       | Action.UserEq _ _ => True
+      | Action.FindUserWithEnoughBalance _ _ => True
+      | Action.SellingPriceForNft _ _ _ => True
       end.
   End InAction.
 

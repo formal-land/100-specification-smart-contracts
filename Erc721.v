@@ -17,7 +17,10 @@ End State.
     output. *)
 Module Command.
   Inductive t {init_output : InitOutput} : Set -> Set :=
-  | Update (to : User) (token_id : TokenKind) : t unit.
+  | Update (to : User) (token_id : TokenKind) : t unit
+  | Mint (to : User) (token_id : TokenKind) : t unit
+  | Approve (to : User) (token_id : TokenKind) : t unit.
+  (* | ApproveForAll (to : User) : t unit. *)
   Arguments t : clear implicits.
 End Command.
 
@@ -54,6 +57,19 @@ Definition smart_contract :
       | None =>
         M.Pure None
       end
+    | Command.Mint to token_id =>
+      let! is_success := M.MakeAction (Action.Mint token_id to TokenQuantityOne) in
+      if is_success then
+        M.Pure (Some (tt, state))
+      else
+        M.Pure None
+    | Command.Approve to token_id =>
+      let! is_success := M.MakeAction (Action.Approve token_id sender to TokenQuantityOne) in
+      if is_success then
+        M.Pure (Some (tt, state))
+      else
+        M.Pure None
+    (* | Command.ApproveForAll to => *)
     end;
 |}.
 
@@ -122,6 +138,42 @@ Module IsSafe.
             }
             apply ActionTree.Forall.Pure.
           }
+        }
+        { apply ActionTree.Forall.Let. {
+            apply ActionTree.Forall.MakeAction.
+            cbn.
+            trivial.
+          }
+          apply ActionTree.Forall.Pure.
+        }
+      }
+      { (* Mint *)
+        unfold NoStealing.InRun.t; cbn.
+        destruct Primitives.mint; cbn.
+        { apply ActionTree.Forall.Let. {
+            apply ActionTree.Forall.MakeAction.
+            cbn.
+            trivial.
+          }
+          apply ActionTree.Forall.Pure.
+        }
+        { apply ActionTree.Forall.Let. {
+            apply ActionTree.Forall.MakeAction.
+            cbn.
+            trivial.
+          }
+          apply ActionTree.Forall.Pure.
+        }
+      }
+      { (* Approve *)
+        unfold NoStealing.InRun.t; cbn.
+        destruct Primitives.approve; cbn.
+        { apply ActionTree.Forall.Let. {
+            apply ActionTree.Forall.MakeAction.
+            cbn.
+            trivial.
+          }
+          apply ActionTree.Forall.Pure.
         }
         { apply ActionTree.Forall.Let. {
             apply ActionTree.Forall.MakeAction.
