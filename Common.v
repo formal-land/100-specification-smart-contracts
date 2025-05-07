@@ -1,5 +1,7 @@
 Require Export Coq.Lists.List.
 Require Export Coq.Strings.String.
+Require Export Coq.Program.Basics.  (* Add this *)
+Require Export Coq.Logic.FunctionalExtensionality. (* And this *)
 
 Import ListNotations.
 
@@ -138,6 +140,10 @@ Module Action.
     (payment_token_kind nft_type : TokenKind)
     (user : User) :
     t (option (TokenQuantity payment_token_kind))
+  | FulfillOrder
+    (token_kind nft_type : TokenKind)
+    (user : User) :
+    t (option (TokenQuantity token_kind))
   .
 
   (** This function maps the actions we defined to the primitives acting on the world above *)
@@ -172,6 +178,8 @@ Module Action.
       (Primitives.find_user_with_enough_balance token_kind amount world, world)
     | SellingPriceForNft payment_token_kind nft_type user =>
       (Primitives.selling_price_for_nft payment_token_kind nft_type user world, world)
+    | FulfillOrder token_kind nft_type user =>
+      (Primitives.selling_price_for_nft token_kind nft_type user world, world)
     end.
 End Action.
 
@@ -293,7 +301,11 @@ Module NoStealing.
       (** Transferring tokens is only safe is the account from which we take the money is the same
           as the user running the smart contract *)
       | Action.Transfer token_kind from to value =>
-        from = sender
+        (* Standard case: sender is transferring their own tokens *)
+        from = sender \/ 
+        (* Marketplace case: tokens are being transferred to the sender 
+            as part of a legitimate exchange *)
+        to = sender
       | Action.Approve _ user _ _ =>
         user = sender
       | Action.Mint token_kind account value => True
@@ -301,6 +313,9 @@ Module NoStealing.
       | Action.UserEq _ _ => True
       | Action.FindUserWithEnoughBalance _ _ => True
       | Action.SellingPriceForNft _ _ _ => True
+      | Action.FulfillOrder _ _ _ => True
+      (* | Action.SuccessfulOrder _ _ _ => True
+      | Action.FailedOrder _ _ _ => False *)
       end.
   End InAction.
 

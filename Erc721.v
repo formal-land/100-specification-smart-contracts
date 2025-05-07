@@ -102,6 +102,8 @@ Module IsSafe.
               apply ActionTree.Forall.Let. {
                 apply ActionTree.Forall.MakeAction.
                 cbn.
+                trivial.
+                left.
                 apply Primitives.user_eq_is_valid.
                 trivial.
               }
@@ -120,6 +122,7 @@ Module IsSafe.
               apply ActionTree.Forall.Let. {
                 apply ActionTree.Forall.MakeAction.
                 cbn.
+                left.
                 apply Primitives.user_eq_is_valid.
                 trivial.
               }

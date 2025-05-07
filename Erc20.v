@@ -140,14 +140,14 @@ Module IsSafe.
         { apply ActionTree.Forall.Let. {
             apply ActionTree.Forall.MakeAction.
             cbn.
-            reflexivity.
+            left. trivial.
           }
           apply ActionTree.Forall.Pure.
         }
         { apply ActionTree.Forall.Let. {
             apply ActionTree.Forall.MakeAction.
             cbn.
-            reflexivity.
+            left. trivial.
           }
           apply ActionTree.Forall.Pure.
         }
