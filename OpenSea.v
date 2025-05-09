@@ -18,10 +18,14 @@ End State.
 (** Entrypoints of the contract *)
 Module Command.
   Inductive t {payment_token_kind : InitOutput} : Set -> Set :=
-  | FulfillOrder
+  | ProposeItem
       (nft_type : TokenKind)
       (nft_quantity : TokenQuantity nft_type)
-      (amount : TokenQuantity payment_token_kind) :
+      (item_price : TokenQuantity payment_token_kind) :
+      t unit
+  | GetItem
+      (nft_type : TokenKind)
+      (payment_token_quantity : TokenQuantity payment_token_kind) :
       t bool
   .
   Arguments t : clear implicits.
@@ -39,22 +43,28 @@ Definition smart_contract :
     M.Pure (Some (payment_token_kind, tt));
   SmartContract.call A payment_token_kind sender command state :=
     match command in Command.t _ A return M.t (option (A * _)) with
-    | Command.FulfillOrder nft_type nft_quantity amount =>
-      let! user := M.MakeAction (Action.FindUserWithEnoughBalance nft_type nft_quantity) in
-      match user with
-      | Some user =>
-        let! selling_price :=
-          M.MakeAction (Action.SellingPriceForNft payment_token_kind nft_type user) in
-        match selling_price with
-        | Some selling_price =>
-          let! is_payment_success :=
-            M.MakeAction (Action.Transfer payment_token_kind user sender selling_price) in
-          let! is_nft_transfer_success :=
-            M.MakeAction (Action.Transfer nft_type user sender nft_quantity) in
-          M.Pure (Some (is_payment_success && is_nft_transfer_success, state))
-        | None =>
-          M.Pure (Some (false, state))
-        end
+    | Command.ProposeItem nft_type nft_quantity item_price =>
+      let! _ :=
+        M.MakeAction (Action.ProposeItem sender payment_token_kind nft_type nft_quantity item_price) in
+      M.Pure (Some (tt, tt))
+    | Command.GetItem nft_type payment_token_quantity =>
+      let! seller :=
+        M.MakeAction (Action.FindUserReadyToDoASwap
+          payment_token_kind nft_type
+          payment_token_quantity TokenQuantityOne
+        ) in
+      match seller with
+      | Some seller =>
+        let! is_swap_success :=
+          M.MakeAction (Action.Swap
+            sender
+            seller
+            payment_token_kind
+            nft_type
+            payment_token_quantity
+            TokenQuantityOne
+          ) in
+        M.Pure (Some (is_swap_success, state))
       | None =>
         M.Pure (Some (false, state))
       end
@@ -76,139 +86,53 @@ Module IsSafe.
       apply ActionTree.Forall.Pure.
     }
     { (* call *)
-      destruct command.
+      destruct command eqn:?.
+      { (* ProposeItem *)
+        unfold NoStealing.InRun.t; cbn.
+        apply ActionTree.Forall.Let. {
+          apply ActionTree.Forall.MakeAction.
+          cbn.
+          reflexivity.
+        }
+        apply ActionTree.Forall.Pure.
+      }
       { (* FulfillOrder *)
         unfold NoStealing.InRun.t; cbn.
-        destruct Primitives.find_user_with_enough_balance; cbn.
-        { (* We found a user with enough balance *)
-          destruct Primitives.selling_price_for_nft; cbn.
-          { (* We found a selling price *)
-            destruct Primitives.transfer; cbn.
-            { (* The payment transfer succeeded *)
-              destruct Primitives.transfer; cbn.
-              { (* The NFT transfer succeeded *)
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  trivial.
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  trivial.
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  right. trivial.  (* from = sender is directly provable *)
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  (* For NFT transfers from user (seller) to sender (buyer), 
-                     we need to prove the right side of the disjunction (to = sender) *)
-                  right. trivial.
-                }
-                apply ActionTree.Forall.Pure.
-              }
-              { (* The NFT transfer failed *)
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  trivial.
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  trivial.
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  right. trivial.  (* from = sender is directly provable *)
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  (* For NFT transfers from user (seller) to sender (buyer), 
-                     we need to prove the right side of the disjunction (to = sender) *)
-                  right.
-                  trivial.
-              }
-                apply ActionTree.Forall.Pure.
-              }
+        destruct Primitives.find_user_ready_to_do_a_swap
+          as [seller |]
+          eqn:H_seller_ready_to_swap; cbn.
+        { (* We found a seller *)
+          destruct Primitives.swap; cbn.
+          { (* The swap succeeded *)
+            apply ActionTree.Forall.Let. {
+              apply ActionTree.Forall.MakeAction.
+              cbn.
+              trivial.
             }
-            { (* The payment transfer failed *)
-              destruct Primitives.transfer; cbn.
-              { (* The NFT transfer succeeded *)
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  trivial.
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  trivial.
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  right. trivial.  (* from = sender is directly provable *)
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  (* For NFT transfers from user (seller) to sender (buyer), 
-                     we need to prove the right side of the disjunction (to = sender) *)
-                  right. (* Choose the right side of the disjunction to = sender *)
-                  trivial. (* Since to is literally "sender" in this case, this is trivial *)
-                }
-                apply ActionTree.Forall.Pure.
-              }
-              { (* The NFT transfer failed *)
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  trivial.
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  trivial.
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  right. trivial.  (* from = sender is directly provable *)
-                }
-                apply ActionTree.Forall.Let. {
-                  apply ActionTree.Forall.MakeAction.
-                  cbn.
-                  (* For NFT transfers from user (seller) to sender (buyer), 
-                     we need to prove the right side of the disjunction (to = sender) *)
-                  right. (* Choose the right side of the disjunction to = sender *)
-                  trivial. (* Since to is literally "sender" in this case, this is trivial *)
-                }
-                apply ActionTree.Forall.Pure.
-              }
+            apply ActionTree.Forall.Let. {
+              apply ActionTree.Forall.MakeAction.
+              cbn.
+              apply Primitives.find_user_ready_to_do_a_swap_is_valid.
+              exact H_seller_ready_to_swap.
             }
+            apply ActionTree.Forall.Pure.
           }
-          { (* We did not find a selling price *)
+          { (* The swap failed *)
             apply ActionTree.Forall.Let. {
               apply ActionTree.Forall.MakeAction.
-              cbn.
-              trivial.
+                cbn.
+                trivial.
             }
             apply ActionTree.Forall.Let. {
               apply ActionTree.Forall.MakeAction.
               cbn.
-              trivial.
+              apply Primitives.find_user_ready_to_do_a_swap_is_valid.
+              exact H_seller_ready_to_swap.
             }
             apply ActionTree.Forall.Pure.
           }
         }
-        { (* We did not find a user with enough balance *)
+        { (* We did not find a selling price *)
           apply ActionTree.Forall.Let. {
             apply ActionTree.Forall.MakeAction.
             cbn.
