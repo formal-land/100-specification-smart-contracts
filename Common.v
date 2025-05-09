@@ -102,6 +102,54 @@ Module Primitives.
     User ->
     World ->
     option (TokenQuantity payment_token_kind).
+
+  Parameter propose_items :
+    forall (proposing_user : User),
+    forall (payment_token_kind nft_type : TokenKind),
+    forall (nft_quantity : TokenQuantity nft_type),
+    forall (item_price : TokenQuantity payment_token_kind),
+    World ->
+    World.
+
+  Parameter swap :
+    forall (buyer seller : User),
+    forall (buyer_token_kind seller_token_kind : TokenKind),
+    forall (buyer_token_quantity : TokenQuantity buyer_token_kind),
+    forall (seller_token_quantity : TokenQuantity seller_token_kind),
+    World ->
+    option World.
+
+  Parameter Is_ready_to_do_the_swap :
+    forall (seller : User),
+    forall (buyer_token_kind seller_token_kind : TokenKind),
+    forall (buyer_token_quantity : TokenQuantity buyer_token_kind),
+    forall (seller_token_quantity : TokenQuantity seller_token_kind),
+    World ->
+    Prop.
+
+  Parameter find_user_ready_to_do_a_swap :
+    forall (buyer_token_kind seller_token_kind : TokenKind),
+    forall (buyer_token_quantity : TokenQuantity buyer_token_kind),
+    forall (seller_token_quantity : TokenQuantity seller_token_kind),
+    World ->
+    option User.
+
+  Axiom find_user_ready_to_do_a_swap_is_valid :
+    forall (buyer_token_kind seller_token_kind : TokenKind),
+    forall (buyer_token_quantity : TokenQuantity buyer_token_kind),
+    forall (seller_token_quantity : TokenQuantity seller_token_kind),
+    forall (world : World),
+    forall (seller : User),
+    find_user_ready_to_do_a_swap
+      buyer_token_kind seller_token_kind
+      buyer_token_quantity seller_token_quantity
+      world =
+    Some seller ->
+    Primitives.Is_ready_to_do_the_swap
+      seller
+      buyer_token_kind seller_token_kind
+      buyer_token_quantity seller_token_quantity
+      world.
 End Primitives.
 
 (** Actions are the primitives that we can run in our DSL to interact with tokens, make transfers,
@@ -144,7 +192,24 @@ Module Action.
     (token_kind nft_type : TokenKind)
     (user : User) :
     t (option (TokenQuantity token_kind))
-  .
+  | ProposeItem
+    (proposing_user : User)
+    (payment_token_kind nft_type : TokenKind)
+    (nft_quantity : TokenQuantity nft_type)
+    (item_price : TokenQuantity payment_token_kind) :
+    t unit
+  | Swap
+    (buyer : User)
+    (seller : User)
+    (buyer_token_kind seller_token_kind : TokenKind)
+    (buyer_token_quantity : TokenQuantity buyer_token_kind)
+    (seller_token_quantity : TokenQuantity seller_token_kind) :
+    t bool
+  | FindUserReadyToDoASwap
+    (buyer_token_kind seller_token_kind : TokenKind)
+    (buyer_token_quantity : TokenQuantity buyer_token_kind)
+    (seller_token_quantity : TokenQuantity seller_token_kind) :
+    t (option User).
 
   (** This function maps the actions we defined to the primitives acting on the world above *)
   Definition run (world : World) {A : Set} (action : t A) : A * World :=
@@ -180,6 +245,37 @@ Module Action.
       (Primitives.selling_price_for_nft payment_token_kind nft_type user world, world)
     | FulfillOrder token_kind nft_type user =>
       (Primitives.selling_price_for_nft token_kind nft_type user world, world)
+    | ProposeItem proposing_user payment_token_kind nft_type nft_quantity item_price =>
+      let new_world :=
+        Primitives.propose_items proposing_user payment_token_kind nft_type nft_quantity item_price world in
+      (tt, new_world)
+    | Swap
+        buyer seller
+        buyer_token_kind seller_token_kind
+        buyer_token_quantity seller_token_quantity =>
+      match
+        Primitives.swap
+          buyer
+          seller
+          buyer_token_kind
+          seller_token_kind
+          buyer_token_quantity
+          seller_token_quantity
+          world
+      with
+      | Some world' => (true, world')
+      | None => (false, world)
+      end
+    | FindUserReadyToDoASwap
+      buyer_token_kind seller_token_kind
+      buyer_token_quantity seller_token_quantity =>
+      (
+        Primitives.find_user_ready_to_do_a_swap
+          buyer_token_kind seller_token_kind
+          buyer_token_quantity seller_token_quantity
+          world,
+        world
+      )
     end.
 End Action.
 
@@ -291,7 +387,7 @@ Module NoStealing.
     (** We first define that a smart contract is safe at the level of a single action. We consider
         an action [action] and a user [sender] which is executing the current smart contract
         execution. *)
-    Definition t (sender : User) {A : Set} (action : Action.t A) : Prop :=
+    Definition t (world : World) (sender : User) {A : Set} (action : Action.t A) : Prop :=
       match action with
       (** Creating a new kind of token is safe *)
       | Action.CreateTokenKind => True
@@ -314,6 +410,18 @@ Module NoStealing.
       | Action.FindUserWithEnoughBalance _ _ => True
       | Action.SellingPriceForNft _ _ _ => True
       | Action.FulfillOrder _ _ _ => True
+      | Action.ProposeItem _ _ _ _ _ => True
+      | Action.Swap
+          buyer seller
+          buyer_token_kind seller_token_kind
+          buyer_token_quantity seller_token_quantity =>
+        Primitives.Is_ready_to_do_the_swap seller
+          buyer_token_kind
+          seller_token_kind
+          buyer_token_quantity
+          seller_token_quantity
+          world
+      | Action.FindUserReadyToDoASwap _ _ _ _ => True
       (* | Action.SuccessfulOrder _ _ _ => True
       | Action.FailedOrder _ _ _ => False *)
       end.
@@ -321,8 +429,8 @@ Module NoStealing.
 
   Module InActionTree.
     (** We generalize the safety of a an action to a tree of actions *)
-    Definition t (sender : User) (tree : ActionTree.t) : Prop :=
-      ActionTree.Forall.t (@InAction.t sender) tree.
+    Definition t (world : World) (sender : User) (tree : ActionTree.t) : Prop :=
+      ActionTree.Forall.t (@InAction.t world sender) tree.
   End InActionTree.
 
   Module InRun.
@@ -330,7 +438,7 @@ Module NoStealing.
         actions *)
     Definition t {A : Set} (world : World) (sender : User) (e : M.t A) : Prop :=
       let '(_, _, tree) := M.run e world in
-      InActionTree.t sender tree.
+      InActionTree.t world sender tree.
   End InRun.
 
   Module InSmartContract.
