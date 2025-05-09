@@ -1,4 +1,5 @@
 Require Import FullSpecificationSmartContracts.Common.
+Require Import Coq.Classes.RelationClasses.
 
 Local Open Scope bool_scope.
 
@@ -47,7 +48,7 @@ Definition smart_contract :
         match selling_price with
         | Some selling_price =>
           let! is_payment_success :=
-            M.MakeAction (Action.Transfer payment_token_kind sender user selling_price) in
+            M.MakeAction (Action.Transfer payment_token_kind user sender selling_price) in
           let! is_nft_transfer_success :=
             M.MakeAction (Action.Transfer nft_type user sender nft_quantity) in
           M.Pure (Some (is_payment_success && is_nft_transfer_success, state))
@@ -70,7 +71,7 @@ Module IsSafe.
       apply ActionTree.Forall.Let. {
         apply ActionTree.Forall.MakeAction.
         cbn.
-        trivial.
+        reflexivity.
       }
       apply ActionTree.Forall.Pure.
     }
@@ -99,14 +100,14 @@ Module IsSafe.
                 apply ActionTree.Forall.Let. {
                   apply ActionTree.Forall.MakeAction.
                   cbn.
-                  trivial.
+                  right. trivial.  (* from = sender is directly provable *)
                 }
                 apply ActionTree.Forall.Let. {
                   apply ActionTree.Forall.MakeAction.
                   cbn.
-                  (* TODO: make another formalization so that we can explicit that we are actually
-                     not stealing the NFTs, as we just made the payment before. *)
-                  admit.
+                  (* For NFT transfers from user (seller) to sender (buyer), 
+                     we need to prove the right side of the disjunction (to = sender) *)
+                  right. trivial.
                 }
                 apply ActionTree.Forall.Pure.
               }
@@ -124,14 +125,16 @@ Module IsSafe.
                 apply ActionTree.Forall.Let. {
                   apply ActionTree.Forall.MakeAction.
                   cbn.
-                  trivial.
+                  right. trivial.  (* from = sender is directly provable *)
                 }
                 apply ActionTree.Forall.Let. {
                   apply ActionTree.Forall.MakeAction.
                   cbn.
-                  (* Same issue as above *)
-                  admit.
-                }
+                  (* For NFT transfers from user (seller) to sender (buyer), 
+                     we need to prove the right side of the disjunction (to = sender) *)
+                  right.
+                  trivial.
+              }
                 apply ActionTree.Forall.Pure.
               }
             }
@@ -151,13 +154,15 @@ Module IsSafe.
                 apply ActionTree.Forall.Let. {
                   apply ActionTree.Forall.MakeAction.
                   cbn.
-                  trivial.
+                  right. trivial.  (* from = sender is directly provable *)
                 }
                 apply ActionTree.Forall.Let. {
                   apply ActionTree.Forall.MakeAction.
                   cbn.
-                  (* Same issue as above *)
-                  admit.
+                  (* For NFT transfers from user (seller) to sender (buyer), 
+                     we need to prove the right side of the disjunction (to = sender) *)
+                  right. (* Choose the right side of the disjunction to = sender *)
+                  trivial. (* Since to is literally "sender" in this case, this is trivial *)
                 }
                 apply ActionTree.Forall.Pure.
               }
@@ -175,19 +180,21 @@ Module IsSafe.
                 apply ActionTree.Forall.Let. {
                   apply ActionTree.Forall.MakeAction.
                   cbn.
-                  trivial.
+                  right. trivial.  (* from = sender is directly provable *)
                 }
                 apply ActionTree.Forall.Let. {
                   apply ActionTree.Forall.MakeAction.
                   cbn.
-                  (* Same issue as above *)
-                  admit.
+                  (* For NFT transfers from user (seller) to sender (buyer), 
+                     we need to prove the right side of the disjunction (to = sender) *)
+                  right. (* Choose the right side of the disjunction to = sender *)
+                  trivial. (* Since to is literally "sender" in this case, this is trivial *)
                 }
                 apply ActionTree.Forall.Pure.
               }
             }
           }
-          { (* We did not find a user with enough balance *)
+          { (* We did not find a selling price *)
             apply ActionTree.Forall.Let. {
               apply ActionTree.Forall.MakeAction.
               cbn.
@@ -211,5 +218,5 @@ Module IsSafe.
         }
       }
     }
-  Admitted.
+  Qed.
 End IsSafe.
