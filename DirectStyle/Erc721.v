@@ -1,4 +1,4 @@
-Require Import FullSpecificationSmartContracts.Common.
+Require Import FullSpecificationSmartContracts.DirectStyle.Common.
 
 Definition InitInput : Set :=
   string * string.

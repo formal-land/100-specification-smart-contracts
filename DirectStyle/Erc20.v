@@ -1,4 +1,4 @@
-Require Import FullSpecificationSmartContracts.Common.
+Require Import FullSpecificationSmartContracts.DirectStyle.Common.
 
 (** Here we give an application of our DSL above with a representation of a simplified version of
     an [ERC-20] smart contract. *)

@@ -1,4 +1,4 @@
-Require Import FullSpecificationSmartContracts.Common.
+Require Import FullSpecificationSmartContracts.DirectStyle.Common.
 Require Import Coq.Classes.RelationClasses.
 
 Local Open Scope bool_scope.
