@@ -95,32 +95,31 @@ Module Action.
       transfer was successful, meaning if there were enough funds. *)
   | Transfer
     (token_kind : TokenKind)
-    (from to : User)
+    (to : User)
     (value : TokenQuantity token_kind) :
     t bool
   | UserEq (user1 user2 : User) : t bool
   | RegisterPromiseForUser
       {Promise : Set}
-      (user : User)
       (promise : Promise) :
       t unit.
 
   (** This function maps the actions we defined to the primitives acting on the world above *)
-  Definition run (world : World) {A : Set} (action : t A) :
+  Definition run (world : World) (user : User) {A : Set} (action : t A) :
       A * World :=
     match action with
     | CreateTokenKind =>
       Primitives.create_token_kind world
     | GetBalance token_kind user =>
       (Primitives.get_balance token_kind user world, world)
-    | Transfer token_kind from to value =>
-      match Primitives.transfer token_kind from to value world with
+    | Transfer token_kind to value =>
+      match Primitives.transfer token_kind user to value world with
       | Some world' => (true, world')
       | None => (false, world)
       end
     | UserEq user1 user2 =>
       (Primitives.user_eq user1 user2, world)
-    | RegisterPromiseForUser user promise =>
+    | RegisterPromiseForUser promise =>
       (tt, Primitives.register_promise_for_user user promise world)
     end.
 End Action.
@@ -174,17 +173,17 @@ Module M.
   Arguments MakeAction {_}.
 
   (** Execute a program using the primitives above and returning the tree of actions that were
-      made. *)
-  Fixpoint run {A : Set} (e : t A) (world : World) :
+      made. We have access to the current user executing the code in context. *)
+  Fixpoint run {A : Set} (e : t A) (world : World) (user : User) :
       A * World * ActionTree.t :=
     match e with
     | Pure value => (value, world, ActionTree.Pure)
     | Let e k =>
-      let '(x, world', tree1) := run e world in
-      let '(result, world'', tree2) := run (k x) world' in
+      let '(x, world', tree1) := run e world user in
+      let '(result, world'', tree2) := run (k x) world' user in
       (result, world'', ActionTree.Let tree1 tree2)
     | MakeAction action =>
-      let '(result, world') := Action.run world action in
+      let '(result, world') := Action.run world user action in
       (result, world', ActionTree.MakeAction action)
     end.
 End M.
@@ -193,44 +192,3 @@ End M.
 Notation "'let!' a ':=' b 'in' c" :=
   (M.Let b (fun a => c))
   (at level 200, a pattern, b at level 100, c at level 200).
-
-Parameter USDC : TokenKind.
-
-(* Module SmartContract.
-  (** A general definition of what is a smart contract. A smart contract has many type parameters
-      like [State] to represent the type of its internal storage.
-
-      It has two methods [init] and [call] to represent the initial call (the constructor in
-      Solidity) and the sub-sequent calls. We will use an [Inductive] type to represent the payload
-      of the [call] function and encode the fact that there might be different entrypoints in the
-      smart contract.
-    *)
-  Record t
-      {InitInput InitOutput : Set}
-      {Intent : TokenKind -> Set}
-      {Command : InitOutput -> Set -> Set}
-      {State : Set} :
-      Set := {
-    init
-      (** The user instantiating the smart contract on chain *)
-      (sender : User)
-      (** Some parameters that the user can choose to instantiate the contract *)
-      (init_input : InitInput) :
-      M.t (Intent := Intent USDC) (option (InitOutput * State));
-    call {A : Set}
-      (** Some initialization value that was computed by the [init] function *)
-      (init_output : InitOutput)
-      (** All smart contract calls originate form a certain user [sender] that is running and paying
-          for the call *)
-      (sender : User)
-      (** The [command] is the payload that we sent to the smart contract to execute it *)
-      (command : Command init_output A)
-      (** The initial internal storage [state] at the beginning of the call *)
-      (state : State) :
-      (** We return an option type to represent a potential execution failure (a revert in
-          Solidity). In case of success, the output is a couple of a value of type [A], depending on
-          the kind of [command] we call, and a new internal storage state. *)
-      M.t (Intent := Intent USDC) (option (A * State));
-  }.
-  Arguments t : clear implicits.
-End SmartContract. *)

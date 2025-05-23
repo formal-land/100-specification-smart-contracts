@@ -17,7 +17,6 @@ Module Request.
 End Request.
 
 Definition execute_request {payment_token token_kind : TokenKind}
-    (requested_user : User)
     (sender : User)
     (payment : TokenQuantity payment_token)
     (promises : Promises.t token_kind)
@@ -31,13 +30,13 @@ Definition execute_request {payment_token token_kind : TokenKind}
     | Promises.Approval spender quantity =>
       if token_quantity_leq value quantity then
         let! _ :=
-          M.MakeAction (Action.Transfer token_kind requested_user to value) in
+          M.MakeAction (Action.Transfer token_kind to value) in
         let new_approved_quantity :=
           token_quantity_sub quantity value in
         match new_approved_quantity with
         | Some new_approved_quantity =>
           let! _ :=
-            M.MakeAction (Action.RegisterPromiseForUser requested_user (Promises.Approval spender new_approved_quantity)) in
+            M.MakeAction (Action.RegisterPromiseForUser (Promises.Approval spender new_approved_quantity)) in
           M.Pure true
         | None =>
           M.Pure false

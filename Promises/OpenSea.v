@@ -19,7 +19,6 @@ Module Request.
 End Request.
 
 Definition execute_request {payment_token : TokenKind}
-    (requested_user : User)
     (sender : User)
     (payment : TokenQuantity payment_token)
     (promises : Promises.t payment_token)
@@ -34,9 +33,9 @@ Definition execute_request {payment_token : TokenKind}
       if token_kind_eq nft_token nft_token' then
         if token_quantity_leq cost payment then
           let! _ :=
-            M.MakeAction (Action.Transfer nft_token requested_user sender TokenQuantityOne) in
+            M.MakeAction (Action.Transfer nft_token sender TokenQuantityOne) in
           let! _ :=
-            M.MakeAction (Action.RegisterPromiseForUser requested_user (Promises.Nothing (payment_token := payment_token))) in
+            M.MakeAction (Action.RegisterPromiseForUser (Promises.Nothing (payment_token := payment_token))) in
           M.Pure true
         else
           M.Pure false
