@@ -26,6 +26,8 @@ Parameter TokenQuantity : forall (token_kind : TokenKind), Set.
 (** A quantity of one token for a given [token_kind]. *)
 Parameter TokenQuantityOne : forall {token_kind : TokenKind}, TokenQuantity token_kind.
 
+Parameter TokenQuantityZero : forall {token_kind : TokenKind}, TokenQuantity token_kind.
+
 Parameter token_kind_eq : forall (token_kind1 token_kind2 : TokenKind), bool.
 
 Parameter token_quantity_leq : forall {token_kind : TokenKind},
@@ -74,6 +76,15 @@ Module Primitives.
     forall (promise : Promise),
     World ->
     World.
+
+  Parameter emit_request :
+    forall {payment_token : TokenKind},
+    forall {Promises Request : Set},
+    forall (to_selector : User -> Promises -> Prop),
+    forall (payment : TokenQuantity payment_token),
+    forall (request : Request),
+    World ->
+    option World.
 End Primitives.
 
 (** Actions are the primitives that we can run in our DSL to interact with tokens, make transfers,
@@ -102,7 +113,18 @@ Module Action.
   | RegisterPromiseForUser
       {Promise : Set}
       (promise : Promise) :
-      t unit.
+      t unit
+  | EmitRequest
+      {payment_token : TokenKind}
+      {Promises Request : Set}
+      (** A property to select the user to which we are sending the request. If no users are found,
+          the request returns [false]. If more than one user is found, the request is sent to
+          exactly one of them.
+      *)
+      (to_selector : User -> Promises -> Prop)
+      (payment : TokenQuantity payment_token)
+      (request : Request) :
+      t bool.
 
   (** This function maps the actions we defined to the primitives acting on the world above *)
   Definition run (world : World) (user : User) {A : Set} (action : t A) :
@@ -121,6 +143,11 @@ Module Action.
       (Primitives.user_eq user1 user2, world)
     | RegisterPromiseForUser promise =>
       (tt, Primitives.register_promise_for_user user promise world)
+    | EmitRequest to_selector payment request =>
+      match Primitives.emit_request to_selector payment request world with
+      | Some world' => (true, world')
+      | None => (false, world)
+      end
     end.
 End Action.
 
